@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta charset='UTF-8'>
+    <meta http-equiv='X-UA-Compatible' content='IE=edge'>
+    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+    <title>Document</title>
+    <script src='https://cdn.tailwindcss.com'></script>
+    <script src='https://unpkg.com/alpinejs' defer></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-storage.js"></script>
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyDbaFJEfub6qOOTW5AMOMW7YajnFzxiKLk",
+            authDomain: "multiplayer-game-8cc18.firebaseapp.com",
+            projectId: "multiplayer-game-8cc18",
+            storageBucket: "multiplayer-game-8cc18.appspot.com",
+            messagingSenderId: "749554849057",
+            appId: "1:749554849057:web:7cb067c99fbdd70831da60"
+        };
+        firebase.initializeApp(firebaseConfig);
+        var db = firebase.firestore();
+    </script>
+    <style>
+        @media (min-width: 420px) {
+            .playerList{
+                top: 360px;
+                right: 0px;
+            }
+        }
+    </style>
+</head>
+<body x-data="data()">
+    <div class="container mx-auto ml-24">
+        <div class="bg-gray-100 p-4 w-max" x-show="showForm">
+            <div class="flex">
+                <button class="bg-blue-500 text-white px-6 py-2" @click="view = 'create'">Create</button>
+                <button class="bg-teal-500 text-white px-6 py-2" @click="view = 'join'">Join</button>
+            </div>
+
+            <form class="p-4 bg-blue-100" @submit.prevent="createRoom()" x-show="view == 'create'">
+                <input type="text" class="bg-gray-50 px-4 py-2 border rounded" x-model="playerName" placeholder="Player">
+                <input type="text" class="bg-gray-50 px-4 py-2 border rounded" x-model="roomName" placeholder="Room Name">
+                <input type="text" class="bg-gray-50 px-4 py-2 border rounded w-16" x-model="rows" placeholder="Rows">
+                <input type="text" class="bg-gray-50 px-4 py-2 border rounded w-16" x-model="cols" placeholder="Columns">
+                <button class="bg-blue-500 text-white px-4 py-2 rounded">Create Room</button>
+            </form>
+            <form class="p-4 bg-teal-100" @submit.prevent="joinRoom()" x-show="view =='join'">
+                <input type="text" class="bg-gray-50 px-4 py-2 border rounded" x-model="playerName" placeholder="Player">
+                <input type="text" class="bg-gray-50 px-4 py-2 border rounded" x-model="roomId" placeholder="Room ID">
+                <button class="bg-teal-500 text-white px-4 py-2 rounded">Join Room</button>
+            </form>
+        </div>
+        <div class="playerList absolute top-0 right-0 bg-gray-100 p-4">
+            <div class="mb-4 text-lg font-semibold" x-text="roomId"></div>
+            <template x-for="player in players">
+                <div class="" x-text="player.name"></div>
+            </template>
+        </div>
+        <div class="bg-white p-1 rounded border w-max grid grid-cols-11 gap-2 mt-4" x-show="!showForm">
+            <template x-for="color in colors">
+                <div class="h-8 w-8 rounded cursor-pointer border border-gray-300" @click="selectedColor = color" :class="color == selectedColor ? `bg-${color} shadow` : `bg-${color}/50`"></div>
+            </template>
+        </div>
+        <div class="bg-gray-200 p-1 rounded border w-max grid gap-1 mt-4" :style="`grid-template-columns: repeat(${cols}, minmax(0,1fr));`" x-show="showForm">
+            <template x-for="cell in cells">
+                <div class="h-8 w-8 rounded cursor-pointer  " @click="updateColor(cell)" :class="`bg-${cell.color}`"></div>
+            </template>
+        </div>
+    </div>
+    <script>
+        function data(){
+            return {
+                // Rooms and Users
+                roomId: "",
+                roomName: "",
+                playerName: "",
+                view: "create", // "create", "join"
+                showForm: true,
+                createRoom: async function(){
+                    if(this.playerName.trim() == ""){
+                        alert("Please enter name")
+                        return
+                    } else if(this.roomName.trim() == ""){
+                        alert("Please enter room name")
+                        return
+                    } else if(this.cols > 36){
+                        alert("Please enter columns less than 36")
+                        return
+                    } else if(this.rows > 36){
+                        alert("Please enter rows less than 36")
+                        return
+                    }
+                    let room = await db.collection("rooms").add({name: this.roomName});
+                    this.roomId = room.id
+                    await db.collection("rooms").doc(this.roomId).collection("players").add({name: this.playerName});
+                    this.getPlayers();
+                    this.createCells()
+                    this.showForm = false
+                },
+                joinRoom: async function(){
+                    await db.collection("rooms").doc(this.roomId).collection("players").add({name: this.playerName});
+                    await this.getPlayers()
+                    this.showForm = false
+                    this.fetchCells()
+                },
+                players: [],
+                getPlayers: async function(){
+                    await db.collection("rooms").doc(this.roomId).collection("players").orderBy("name", "asc").onSnapshot(snapshot => {
+                        this.players = snapshot.docs.map( doc => ({
+                            ...doc.data(),
+                            id: doc.id
+                        }))
+                    })
+                },
+
+                // Game
+                rows: 12,
+                cols: 12,
+                cells: [],
+                fetchCells: async function(){
+                    await db.collection("rooms").doc(this.roomId).onSnapshot(snapshot => {
+                        this.cells = snapshot.data().cells;
+                        console.log(this.cells);
+                    })
+                },
+                createCells: async function(){
+                    for(i = 0; i < this.rows; i++){
+                        for(j = 0; j < this.cols; j++){
+                            this.cells.push({
+                                row: i,
+                                col: j,
+                                color: "white"
+                            });
+                        }
+                    };
+                    await db.collection("rooms").doc(this.roomId).update({cells: this.cells})
+                    this.fetchCells()
+                },
+                updateColor: async function(_cell){
+                    _cell.color = this.selectedColor
+                    await db.collection("rooms").doc(this.roomId).update({cells: this.cells})
+                },
+                selectedColor: "white",
+                colors: ["blue-600", "green-600", "pink-600", "orange-600", "red-600", "purple-600", "teal-600", "slate-600", "sky-600", "white", "black"],
+            }
+        }
+    </script>
+    <script>
+        // window.onbeforeunload = function() {
+        //     return "Data will be lost if you leave the page, are you sure?";
+        // };
+    </script>
+</body>
+</html>
